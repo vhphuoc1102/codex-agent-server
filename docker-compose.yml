@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  codex-agent-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Codex Model Configuration
+      - CODEX_MODEL_PROVIDER=${CODEX_MODEL_PROVIDER:-cliproxyapi}
+      - CODEX_MODEL=${CODEX_MODEL:-gpt-5-codex}
+      - CODEX_MODEL_REASONING_EFFORT=${CODEX_MODEL_REASONING_EFFORT:-high}
+      - CODEX_API_BASE_URL=${CODEX_API_BASE_URL:-http://host.docker.internal:8317/v1}
+      - CODEX_API_KEY=${CODEX_API_KEY}
+      # Server configuration
+      - CODEX_CLIENT_NAME=${CODEX_CLIENT_NAME:-codex-bridge-server}
+      - CODEX_CLIENT_TITLE=${CODEX_CLIENT_TITLE:-Codex Bridge Server}
+      - CODEX_CLIENT_VERSION=${CODEX_CLIENT_VERSION:-0.1.0}
+      - CODEX_LOG_LEVEL=${CODEX_LOG_LEVEL:-INFO}
+      - CODEX_REQUEST_TIMEOUT=${CODEX_REQUEST_TIMEOUT:-300}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Persistent storage for Codex data (threads, config)
+      - codex-data:/root/.codex
+      # Mount workspace for file operations (optional)
+      - ./workspace:/workspace
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  codex-data:
