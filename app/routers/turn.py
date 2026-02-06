@@ -27,12 +27,14 @@ async def turn_start(
 
         # Track state for matching the completion notification
         turn_state = {"expected_id": None, "completed": None}
+        collected_items: list = []
         completion_event = asyncio.Event()
 
         async def on_turn_completed(notification_params: dict) -> None:
             """Handle turn/completed notification."""
             turn = notification_params.get("turn", {})
             turn_id = turn.get("id")
+            print(f"[TURN] turn/completed received: turn_id={turn_id}", flush=True)
 
             # Match by turn ID if we have it
             if turn_state["expected_id"] is not None:
@@ -44,8 +46,15 @@ async def turn_start(
                 turn_state["completed"] = notification_params
                 completion_event.set()
 
-        # Register handler before starting turn to avoid race conditions
+        async def on_item_completed(notification_params: dict) -> None:
+            """Handle item/completed notification - collect items."""
+            item = notification_params.get("item", {})
+            print(f"[TURN] item/completed received: type={item.get('type')}", flush=True)
+            collected_items.append(item)
+
+        # Register handlers before starting turn to avoid race conditions
         client.on_notification("turn/completed", on_turn_completed)
+        client.on_notification("item/completed", on_item_completed)
 
         try:
             # Start the turn - returns immediately with inProgress status
@@ -57,16 +66,13 @@ async def turn_start(
                 logger.warning("turn/start returned no turn ID")
                 return TurnStartResponse(**result)
 
-            logger.info(
-                "Turn started, waiting for completion",
-                turn_id=turn_state["expected_id"],
-            )
+            print(f"[TURN] Turn started: {turn_state['expected_id']}, waiting for completion...", flush=True)
 
             # Check if we already got the completion (unlikely but possible)
             if turn_state["completed"] is not None:
                 completed_id = turn_state["completed"].get("turn", {}).get("id")
                 if completed_id == turn_state["expected_id"]:
-                    logger.info("Turn already completed", turn_id=completed_id)
+                    print(f"[TURN] Turn already completed: {completed_id}", flush=True)
                     return TurnStartResponse(**turn_state["completed"])
 
             # Wait for turn/completed notification
@@ -75,17 +81,25 @@ async def turn_start(
                 timeout=settings.request_timeout,
             )
 
-            logger.info(
-                "Turn completed",
-                turn_id=turn_state["expected_id"],
-                status=turn_state["completed"].get("turn", {}).get("status"),
+            # Merge collected items into the turn response
+            completed_turn = turn_state["completed"].get("turn", {})
+            if collected_items and not completed_turn.get("items"):
+                completed_turn["items"] = collected_items
+                turn_state["completed"]["turn"] = completed_turn
+
+            print(
+                f"[TURN] Turn completed: {turn_state['expected_id']}, "
+                f"status={completed_turn.get('status')}, "
+                f"items={len(completed_turn.get('items', []))}",
+                flush=True,
             )
 
             return TurnStartResponse(**turn_state["completed"])
 
         finally:
-            # Always clean up the notification handler
+            # Always clean up the notification handlers
             client.remove_notification_handler("turn/completed", on_turn_completed)
+            client.remove_notification_handler("item/completed", on_item_completed)
 
     except asyncio.TimeoutError:
         logger.error(

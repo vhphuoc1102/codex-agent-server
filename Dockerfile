@@ -30,6 +30,7 @@ RUN chmod +x /docker-entrypoint.sh
 
 # Environment variables
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 ENV CODEX_PATH=codex
 ENV CODEX_CLIENT_NAME=codex-bridge-server
 ENV CODEX_CLIENT_VERSION=0.1.0

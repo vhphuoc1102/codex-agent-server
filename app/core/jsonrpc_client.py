@@ -158,6 +158,9 @@ class JsonRpcClient:
 
     async def _handle_message(self, message: dict) -> None:
         """Route a message to the appropriate handler."""
+        # Debug: print all received messages
+        print(f"[JSONRPC] Received: {message.get('method', 'response')} | id={message.get('id')}", flush=True)
+
         # Check if this is a response (has id)
         if "id" in message and message["id"] is not None:
             request_id = message["id"]
