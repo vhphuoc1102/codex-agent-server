@@ -3,6 +3,7 @@ from typing import Any, Callable, Optional
 import structlog
 
 from .process_manager import ProcessManager
+from ..config import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -108,6 +109,38 @@ class JsonRpcClient:
             self._notification_handlers[method] = [
                 h for h in self._notification_handlers[method] if h != handler
             ]
+
+    async def wait_for_notification(
+        self,
+        method: str,
+        predicate: Optional[Callable[[dict], bool]] = None,
+        timeout: Optional[float] = None,
+    ) -> dict:
+        """Wait for a notification matching the predicate.
+
+        Args:
+            method: The notification method to wait for.
+            predicate: Optional function to filter notifications.
+            timeout: Timeout in seconds (defaults to settings.request_timeout).
+
+        Returns:
+            The notification params that matched.
+        """
+        if timeout is None:
+            timeout = settings.request_timeout
+
+        future: asyncio.Future = asyncio.get_event_loop().create_future()
+
+        async def handler(params: dict) -> None:
+            if predicate is None or predicate(params):
+                if not future.done():
+                    future.set_result(params)
+
+        self.on_notification(method, handler)
+        try:
+            return await asyncio.wait_for(future, timeout=timeout)
+        finally:
+            self.remove_notification_handler(method, handler)
 
     async def _message_reader_loop(self) -> None:
         """Background task that reads and routes messages."""
